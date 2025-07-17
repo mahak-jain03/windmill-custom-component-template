@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js";
 
-const __COMPONENT_NAME__ = "My Component";
+const __COMPONENT_NAME__ = "CustomComponent";
 
 export default defineConfig(({ mode }) => ({
   plugins: [
