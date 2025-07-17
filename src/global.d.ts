@@ -15,6 +15,6 @@ interface Setter<Input> {
 }
 declare global {
   interface Window {
-    windmill: Record<string, (props: WindmillProps<any>) => void>;
+    windmill: Record<string, (props: WindmillProps) => void>;
   }
 }

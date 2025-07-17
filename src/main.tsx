@@ -6,22 +6,26 @@ import { Control } from "./studio/Control";
 
 let setter: Setter<any> | undefined = undefined;
 
-const outputs: string[] = [];
 customComponent({
   id: "root",
-  render: true,
-  passSetters: (lsetter: Setter<any>) => {
-    console.log("passSetters");
+  outputs: {
+    set: (key: string, value: any) => {
+      console.log(`Output ${key}:`, value);
+    }
+  },
+  passSetters: (lsetter) => {
     setter = lsetter;
   },
   setOutput: (out) => {
-    outputs.push(JSON.stringify(out));
-    document.getElementById("logs")!.innerHTML = outputs
-      .slice(-10)
-      .join("<br>");
-    console.log("Outputs: " + JSON.stringify(out, null, 2));
+    console.log("Received output:", out);
   },
-});
+  renderInit: true,
+  input: {
+    environment: "pre-production"
+  },
+  } // or "pre-production"
+);
+
 
 const waitForSetter = setInterval(() => {
   if (setter != undefined) {
