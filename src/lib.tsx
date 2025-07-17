@@ -12,7 +12,11 @@ type WindmillProps = {
   passSetters: (setter: any) => void;
   setOutput: (output: any) => void;
   renderInit: boolean;
-  render?: boolean; // Add this line if needed
+  input: {          // <--- this matches Windmill's expectation
+    environment: string;
+    // ... other fields if you want
+  };
+  render?: boolean;
 };
 
 export function customComponent(props: WindmillProps) {
@@ -23,6 +27,7 @@ export function customComponent(props: WindmillProps) {
         passSetters={props.passSetters}
         setOutput={props.setOutput}
         renderInit={props.renderInit}
+        input={props.input} // <--- This is the one and only input prop!
       />
     </React.StrictMode>
   );

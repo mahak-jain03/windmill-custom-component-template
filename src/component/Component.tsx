@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 // -- Customizable resource types --
 const resourceTypes = [
@@ -18,6 +18,10 @@ type ComponentProps = {
   passSetters: (setter: any) => void;
   setOutput: (output: any) => void;
   renderInit: boolean;
+  input: {
+    environment: string;
+    // Add other input fields here as needed
+  };
 };
 
 const initialForm = {
@@ -126,22 +130,29 @@ const ResourceConfigSection = ({
   </div>
 );
 
-const Component: React.FC<ComponentProps> = ({ outputs, passSetters: _passSetters, setOutput: _setOutput, renderInit: _renderInit }) => {
+const Component: React.FC<ComponentProps> = ({
+  outputs, setOutput, passSetters: _passSetters, renderInit: _renderInit, input
+}) =>   {
   const [resources, setResources] = useState<Resource[]>([]);
   const [newResource, setNewResource] = useState(initialForm);
 
+  useEffect(() => {
+    setOutput({ result: resources });
+    if (outputs?.set) outputs.set("result", resources);
+    else if (outputs) outputs.result = resources;
+  }, [resources, setOutput, outputs]);
+
   const handleAdd = () => {
     if (newResource.type) {
-      setResources([...resources, newResource]);
+      setResources(prev => [...prev, newResource]);
       setNewResource(initialForm);
-      outputs?.set?.("result", [...resources, newResource]);
+      // outputs.set(...) is handled by useEffect above
     }
   };
 
   const handleRemove = (idx) => {
-    const next = resources.filter((_, i) => i !== idx);
-    setResources(next);
-    outputs?.set?.("result", next);
+    setResources(prev => prev.filter((_, i) => i !== idx));
+    // outputs.set(...) is handled by useEffect above
   };
 
   return (
@@ -150,7 +161,7 @@ const Component: React.FC<ComponentProps> = ({ outputs, passSetters: _passSetter
         .wm-main-bg {
           min-height: 100vh;
           background: #f7fafd;
-          font-family: "Times New Roman", Times, serif
+          font-family: "Times New Roman", Times, serif;
         }
         .wm-card {
           max-width: 700px;
@@ -288,13 +299,13 @@ const Component: React.FC<ComponentProps> = ({ outputs, passSetters: _passSetter
         }
       `}</style>
       <ResourceConfigSection
-        resources={resources}
-        environment="pre-production"
-        onAdd={handleAdd}
-        onRemove={handleRemove}
-        newResource={newResource}
-        updateNewResource={setNewResource}
-      />
+    resources={resources}
+    environment={input.environment}  // 🔑 Now it's from input.environment!
+    onAdd={handleAdd}
+    onRemove={handleRemove}
+    newResource={newResource}
+    updateNewResource={setNewResource}
+  />
     </div>
   );
 };

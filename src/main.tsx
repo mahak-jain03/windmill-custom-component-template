@@ -19,8 +19,12 @@ customComponent({
   setOutput: (out) => {
     console.log("Received output:", out);
   },
-  renderInit: true
-});
+  renderInit: true,
+  input: {
+    environment: "pre-production"
+  },
+  } // or "pre-production"
+);
 
 
 const waitForSetter = setInterval(() => {
