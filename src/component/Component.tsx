@@ -14,6 +14,13 @@ type WindmillCustomComponentProps = {
   renderInit?: boolean;
 };
 
+function generateDefaultResourceName(resourceType: string, serviceName: string, index: number) {
+  // Example: "myservice-rds-cluster-1"
+  const typeSlug = resourceType.replace(/\s+/g, '-').toLowerCase();
+  const serviceSlug = (serviceName || "service").replace(/\s+/g, '-').toLowerCase();
+  return `${serviceSlug}-${typeSlug}-${index}`;
+}
+
 const RESOURCE_TYPES = [
   "RDS Cluster",
   "DynamoDB Table",
@@ -29,13 +36,14 @@ function customComponent(props: WindmillCustomComponentProps) {
   const [resourceType, setResourceType] = useState("");
   const [resourceName, setResourceName] = useState("");
   const [render, setRender] = useState(props.renderInit ?? true);
+  const [input, setInput] = useState<any>({});
 
   // Windmill passSetters integration (optional)
   useEffect(() => {
     if (props.passSetters) {
       props.passSetters({
-        onInput: (_input: any) => {
-          // Optionally handle input from Windmill
+        onInput: (input: any) => {
+          setInput(input);
         },
         onRender: setRender,
       });
@@ -44,9 +52,11 @@ function customComponent(props: WindmillCustomComponentProps) {
 
   const handleAddResource = () => {
     if (!resourceType) return;
+    const serviceName = input.serviceName;
+    if (!serviceName) return; // Don't add if missing
     const newResource: Resource = {
       type: resourceType,
-      name: resourceName || `${resourceType} ${resources[activeTab].length + 1}`,
+      name: resourceName || generateDefaultResourceName(resourceType, serviceName, resources[activeTab].length + 1),
     };
     const updated = [...resources];
     updated[activeTab] = [...updated[activeTab], newResource];
@@ -71,6 +81,13 @@ function customComponent(props: WindmillCustomComponentProps) {
   };
 
   if (!render) return null;
+  if (!input.serviceName) {
+    return (
+      <div style={{ color: 'red', fontWeight: 600 }}>
+        Error: <code>serviceName</code> input is required from Windmill.
+      </div>
+    );
+  }
 
   return (
     <div style={{
@@ -165,7 +182,7 @@ function customComponent(props: WindmillCustomComponentProps) {
           </select>
           <input
             type="text"
-            placeholder="resource-name"
+            placeholder="resource-name(default name will be generated if left empty)"
             value={resourceName}
             onChange={e => setResourceName(e.target.value)}
             style={{
