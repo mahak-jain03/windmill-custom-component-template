@@ -2,10 +2,22 @@
   font-family: "Times New Roman", Times, serif !important;
   line-height: 1.5;
   font-weight: 400;
-
+  
+  /* The component supports both light and dark by using CSS variables */
   color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #999;
+  /* Dark defaults */
+  --wm-bg: #0b1220;
+  --wm-surface: #111827;
+  --wm-text: #e5e7eb;
+  --wm-muted: #9ca3af;
+  --wm-border: #374151;
+  --wm-tab-inactive-bg: #1f2937;
+  --wm-item-bg: #1f2937;
+  --wm-accent: #4ade80;
+  --wm-danger: #d11a2a;
+
+  color: var(--wm-text);
+  background-color: transparent;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -36,7 +48,7 @@
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
-  background-color: #1a1a1a;
+  background-color: var(--wm-surface);
   cursor: pointer;
   transition: border-color 0.25s;
 }
@@ -50,14 +62,22 @@
 
 @media (prefers-color-scheme: light) {
   .__COMPONENT_NAME__ {
-    color: #213547;
-    background-color: #ffffff;
+    /* Light overrides */
+    --wm-bg: #f8fafc;
+    --wm-surface: #ffffff;
+    --wm-text: #111827;
+    --wm-muted: #6b7280;
+    --wm-border: #e5e7eb;
+    --wm-tab-inactive-bg: #f1f5f9;
+    --wm-item-bg: #f1f5f9;
+    color: var(--wm-text);
+    background-color: transparent;
   }
   .__COMPONENT_NAME__ a:hover {
     color: #747bff;
   }
   .__COMPONENT_NAME__ button {
-    background-color: #f9f9f9;
+    background-color: var(--wm-surface);
   }
 }
 
@@ -68,4 +88,16 @@
 
 .__COMPONENT_NAME__ .card {
   padding: 2em;
+}
+
+/* Form controls and separators adopt theme tokens */
+.__COMPONENT_NAME__ select,
+.__COMPONENT_NAME__ input[type="text"] {
+  background-color: var(--wm-surface);
+  color: var(--wm-text);
+  border: 1px solid var(--wm-border);
+}
+
+.__COMPONENT_NAME__ hr {
+  border-top: 1px solid var(--wm-border);
 }
