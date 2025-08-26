@@ -18,28 +18,46 @@ type WindmillCustomComponentProps = {
   renderInit?: boolean;
 };
 
-function generateDefaultResourceName(
+function slugifyKebab(value: string): string {
+  return (value || "")
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function computeDefaultResourceName(
   resourceType: string,
   serviceName: string,
   env: string,
-  index: number
-) {
-  // For first of its type: "prod-blinkit-service-db", then add numeric suffix for duplicates
-  const typeSlug = resourceType.replace(/\s+/g, '-').toLowerCase();
-  const serviceSlug = (serviceName || "service").replace(/\s+/g, '-').toLowerCase();
+  opts?: { sqsPurpose?: string; deployment?: string }
+): string {
+  const service = slugifyKebab(serviceName || "service");
+  const environment = slugifyKebab(env || "env");
+  const purpose = slugifyKebab(opts?.sqsPurpose || "");
+  const deployment = slugifyKebab(opts?.deployment || "");
 
-  let base: string;
-  if (resourceType === "RDS Cluster") {
-    base = `${env}-blinkit-${serviceSlug}-db`;
-  } else if (resourceType === "Elasticache Cluster") {
-    base = `${env}-blinkit-${serviceSlug}-cache`;
-  } else if (resourceType === "DynamoDB Table") {
-    base = `${env}-blinkit-${serviceSlug}-table`;
-  } else {
-    base = `${env}-${serviceSlug}-${typeSlug}`;
+  switch (resourceType) {
+    case "RDS Cluster":
+      return `${environment}-${service}-cluster`;
+    case "Elasticache Cluster":
+      return `${environment}-${service}-cluster`;
+    case "DynamoDB Table":
+      return `${environment}-${service}-table`;
+    case "S3 Bucket":
+      return `${environment}-${service}-bucket`;
+    case "SQS Queue": {
+      // Always prefer explicit purpose; include deployment when present
+      const parts = ["blinkit", environment, service, purpose].filter(Boolean);
+      if (deployment) parts.push(deployment);
+      return parts.join("-");
+    }
+    case "ECR":
+      return `${environment}-${service}`;
+    default:
+      return `${environment}-${service}-${slugifyKebab(resourceType)}`;
   }
-
-  return index === 1 ? base : `${base}-${index}`;
 }
 
 const RESOURCE_TYPES = [
@@ -47,7 +65,8 @@ const RESOURCE_TYPES = [
   "DynamoDB Table",
   "Elasticache Cluster",
   "SQS Queue",
-  "S3 Bucket"
+  "S3 Bucket",
+  "ECR"
 ];
 
 const ENV_KEYS = ["prod", "preprod"] as const;
@@ -66,14 +85,25 @@ function customComponent(props: WindmillCustomComponentProps) {
   const [error, setError] = useState<string | null>(null);
 
   // environments from input enable/disable the two fixed tabs (prod/preprod)
-  // Accept environments as either an array of strings or a boolean map { prod: true, preprod: false }
+  // Accept environments as either an array of strings or a boolean/string map { prod: true|"true", preprod: false|"false" }
   let enabledSet: Set<string>;
+  const toBooleanFlag = (val: any): boolean => {
+    if (typeof val === "boolean") return val;
+    if (typeof val === "number") return val !== 0;
+    if (typeof val === "string") {
+      const v = val.trim().toLowerCase();
+      if (v === "true" || v === "1" || v === "yes" || v === "y") return true;
+      if (v === "false" || v === "0" || v === "no" || v === "n") return false;
+      return Boolean(v);
+    }
+    return Boolean(val);
+  };
   if (Array.isArray(input?.environments)) {
     const providedEnvs: string[] = (input.environments as any[]).map((e) => String(e).toLowerCase());
     enabledSet = new Set(providedEnvs.length === 0 ? ENV_KEYS : providedEnvs);
   } else if (input?.environments && typeof input.environments === "object") {
     const flags = input.environments as Record<string, any>;
-    const enabledList = (ENV_KEYS as readonly string[]).filter((k) => Boolean(flags[k]));
+    const enabledList = (ENV_KEYS as readonly string[]).filter((k) => toBooleanFlag(flags[k]));
     enabledSet = new Set(enabledList.length === 0 ? ENV_KEYS : enabledList);
   } else {
     enabledSet = new Set(ENV_KEYS);
@@ -153,23 +183,20 @@ function customComponent(props: WindmillCustomComponentProps) {
       return;
     }
 
-    const sameTypeCount = resources[activeTab].filter(r => r.type === resourceType).length;
-    const defaultName = generateDefaultResourceName(
+    const defaultName = computeDefaultResourceName(
       resourceType,
       serviceName,
       env,
-      sameTypeCount + 1
+      { sqsPurpose, deployment: deploymentType }
     );
 
     const newResource: Resource = {
       type: resourceType,
       env,
       name:
-        resourceType === "SQS Queue"
-          ? undefined
-          : resourceType === "S3 Bucket"
-            ? trimmedName
-            : (trimmedName || defaultName),
+        resourceType === "S3 Bucket"
+          ? trimmedName
+          : (trimmedName || defaultName),
       queueType: resourceType === "SQS Queue" ? (sqsType || undefined) : undefined,
       purpose: resourceType === "SQS Queue" ? (sqsPurpose.trim() || undefined) : undefined,
       deploymentType: resourceType === "SQS Queue" && env.toLowerCase() === "prod" ? (deploymentType || undefined) : undefined,
@@ -227,6 +254,17 @@ function customComponent(props: WindmillCustomComponentProps) {
                 if (!isEnabled) return;
                 setActiveTab(i);
                 setDeploymentType(""); // Reset deployment type when switching tabs
+                // Autofill default name for non-SQS when switching environments
+                if (resourceType && resourceType !== "SQS Queue") {
+                  const nextEnv = ENV_KEYS[i] || "";
+                  const suggested = computeDefaultResourceName(
+                    resourceType,
+                    input.serviceName || "service",
+                    nextEnv,
+                    { sqsPurpose, deployment: deploymentType }
+                  );
+                  setResourceName(suggested);
+                }
               }}
               style={{
                 flex: 1,
@@ -275,12 +313,9 @@ function customComponent(props: WindmillCustomComponentProps) {
               }}>
                 <span style={{ flex: 1 }}>
                   {res.type}
-                  {res.type !== "SQS Queue" && res.name ? <>: <b>{res.name}</b></> : null}
+                  {res.name ? <>: <b>{res.name}</b></> : null}
                   {res.type === "SQS Queue" && (
-                    <span> 
-                      — type: <i>{res.queueType}</i>, purpose: <i>{res.purpose}</i>
-                      {res.deploymentType && <span>, deployment: <i>{res.deploymentType}</i></span>}
-                    </span>
+                    <span style={{ color: 'var(--wm-muted)' }}> — type: <i>{res.queueType}</i>, purpose: <i>{res.purpose}</i>{res.deploymentType && <span>, deployment: <i>{res.deploymentType}</i></span>}</span>
                   )}
                   <span style={{ color: 'var(--wm-muted)' }}> ({res.env})</span>
                 </span>
@@ -300,9 +335,27 @@ function customComponent(props: WindmillCustomComponentProps) {
         <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 8 }}>Add New Resource</div>
         <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16, flexWrap: 'wrap' }}>
           <select value={resourceType} onChange={e => { 
-            setResourceType(e.target.value); 
+            const nextType = e.target.value;
+            setResourceType(nextType); 
             setError(null); 
             setDeploymentType(""); // Reset deployment type when resource type changes
+            if (nextType && nextType !== "SQS Queue") {
+              const suggested = computeDefaultResourceName(
+                nextType,
+                input.serviceName || "service",
+                ENV_KEYS[activeTab] || "",
+                { sqsPurpose, deployment: deploymentType }
+              );
+              setResourceName(suggested);
+            } else if (nextType === "SQS Queue") {
+              const suggested = computeDefaultResourceName(
+                nextType,
+                input.serviceName || "service",
+                ENV_KEYS[activeTab] || "",
+                { sqsPurpose, deployment: deploymentType }
+              );
+              setResourceName(suggested);
+            }
           }} style={{
             padding: 8,
             borderRadius: 4,
@@ -332,7 +385,17 @@ function customComponent(props: WindmillCustomComponentProps) {
                 type="text"
                 placeholder="purpose (required for SQS)"
                 value={sqsPurpose}
-                onChange={e => setSqsPurpose(e.target.value)}
+                onChange={e => {
+                  const val = e.target.value;
+                  setSqsPurpose(val);
+                  const suggested = computeDefaultResourceName(
+                    "SQS Queue",
+                    input.serviceName || "service",
+                    (ENV_KEYS[activeTab] || ""),
+                    { sqsPurpose: val, deployment: deploymentType }
+                  );
+                  setResourceName(suggested);
+                }}
                 style={{
                   padding: 8,
                   borderRadius: 4,
@@ -342,7 +405,17 @@ function customComponent(props: WindmillCustomComponentProps) {
                 }}
               />
               {ENV_KEYS[activeTab]?.toLowerCase() === "prod" && (
-                <select value={deploymentType} onChange={e => setDeploymentType(e.target.value as any)} style={{
+                <select value={deploymentType} onChange={e => {
+                  const val = e.target.value as any;
+                  setDeploymentType(val);
+                  const suggested = computeDefaultResourceName(
+                    "SQS Queue",
+                    input.serviceName || "service",
+                    (ENV_KEYS[activeTab] || ""),
+                    { sqsPurpose, deployment: val }
+                  );
+                  setResourceName(suggested);
+                }} style={{
                   padding: 8,
                   borderRadius: 4,
                   border: '1px solid var(--wm-border)',
@@ -354,14 +427,47 @@ function customComponent(props: WindmillCustomComponentProps) {
                   <option value="canary">Canary</option>
                 </select>
               )}
+              {ENV_KEYS[activeTab]?.toLowerCase() === "prod" && (
+                <></>
+              )}
+              <input
+                type="text"
+                placeholder={computeDefaultResourceName(
+                  "SQS Queue",
+                  input.serviceName || "service",
+                  (ENV_KEYS[activeTab] || ""),
+                  { sqsPurpose, deployment: deploymentType }
+                )}
+                value={resourceName}
+                onChange={e => setResourceName(e.target.value)}
+                style={{
+                  padding: 8,
+                  borderRadius: 4,
+                  border: '1px solid var(--wm-border)',
+                  minWidth: 200,
+                  fontFamily: '"Times New Roman", Times, serif'
+                }}
+              />
             </>
           )}
           {resourceType !== "SQS Queue" && (
             <input
               type="text"
-              placeholder={resourceType === "S3 Bucket" ? "bucket-name (required)" : "resource-name (leave empty for default)"}
+              placeholder={(
+                !resourceType
+                  ? "select a resource type first"
+                  : resourceType === "S3 Bucket"
+                    ? "bucket-name (required)"
+                    : computeDefaultResourceName(
+                        resourceType,
+                        input.serviceName || "service",
+                        (ENV_KEYS[activeTab] || ""),
+                        { sqsPurpose, deployment: deploymentType }
+                      )
+              )}
               value={resourceName}
               onChange={e => setResourceName(e.target.value)}
+              disabled={!resourceType}
               style={{
                 padding: 8,
                 borderRadius: 4,
