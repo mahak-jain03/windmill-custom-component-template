@@ -44,17 +44,20 @@ function computeDefaultResourceName(
     case "Elasticache Cluster":
       return `${environment}-${service}-cluster`;
     case "DynamoDB Table":
-      return `${environment}-${service}-table`;
+      return `${environment}-${service}`;
     case "S3 Bucket":
       return `${environment}-${service}-bucket`;
     case "SQS Queue": {
-      // Always prefer explicit purpose; include deployment when present
-      const parts = ["blinkit", environment, service, purpose].filter(Boolean);
-      if (deployment) parts.push(deployment);
+      // Ordering differs for preprod per naming convention:
+      // preprod: preprod-blinkit-<service>-<purpose>
+      // prod (and others): blinkit-<env>-<service>-<purpose>-<deployment?>
+      const baseParts = environment === "preprod"
+        ? [environment, "blinkit"]
+        : ["blinkit", environment];
+      const parts = [...baseParts, service, purpose].filter(Boolean);
+      if (deployment && environment === "prod") parts.push(deployment);
       return parts.join("-");
     }
-    case "ECR":
-      return `${environment}-${service}`;
     default:
       return `${environment}-${service}-${slugifyKebab(resourceType)}`;
   }
@@ -65,8 +68,7 @@ const RESOURCE_TYPES = [
   "DynamoDB Table",
   "Elasticache Cluster",
   "SQS Queue",
-  "S3 Bucket",
-  "ECR"
+  "S3 Bucket"
 ];
 
 const ENV_KEYS = ["prod", "preprod"] as const;
@@ -136,15 +138,19 @@ function customComponent(props: WindmillCustomComponentProps) {
     }
   }, [enabledSet, activeTab]);
 
-  // Auto-update output whenever resources change
+  // Auto-update output whenever resources or enabled envs change
   useEffect(() => {
     if (props.setOutput) {
-      props.setOutput({
-        production: resources[0],
-        preProduction: resources[1],
-      });
+      const out: Record<string, any> = {};
+      if (enabledSet.has("prod")) {
+        out.production = resources[0];
+      }
+      if (enabledSet.has("preprod")) {
+        out.preProduction = resources[1];
+      }
+      props.setOutput(out);
     }
-  }, [resources, props.setOutput]);
+  }, [resources, enabledSet, props.setOutput, input.serviceName]);
 
   const handleAddResource = () => {
     if (!resourceType) return;
@@ -254,6 +260,12 @@ function customComponent(props: WindmillCustomComponentProps) {
                 if (!isEnabled) return;
                 setActiveTab(i);
                 setDeploymentType(""); // Reset deployment type when switching tabs
+                // If switching to preprod and restricted resource types are selected, clear them
+                if (ENV_KEYS[i] === "preprod" && resourceType === "RDS Cluster") {
+                  setResourceType("");
+                  setResourceName("");
+                  return;
+                }
                 // Autofill default name for non-SQS when switching environments
                 if (resourceType && resourceType !== "SQS Queue") {
                   const nextEnv = ENV_KEYS[i] || "";
@@ -364,9 +376,11 @@ function customComponent(props: WindmillCustomComponentProps) {
             fontFamily: '"Times New Roman", Times, serif'
           }}>
             <option value="">Select resource type</option>
-            {RESOURCE_TYPES.map(type => (
-              <option key={type} value={type}>{type}</option>
-            ))}
+            {RESOURCE_TYPES
+              .filter(type => !(ENV_KEYS[activeTab] === "preprod" && type === "RDS Cluster"))
+              .map(type => (
+                <option key={type} value={type}>{type}</option>
+              ))}
           </select>
           {resourceType === "SQS Queue" && (
             <>
@@ -486,22 +500,24 @@ function customComponent(props: WindmillCustomComponentProps) {
               borderRadius: 4,
               padding: "8px 18px",
               fontWeight: 600,
-              cursor:
+              cursor: (
                 resourceType && (
                   resourceType === "SQS Queue"
                     ? (sqsType && sqsPurpose.trim() && (activeTab !== 0 || deploymentType))
                     : (resourceType === "S3 Bucket" ? !!resourceName.trim() : true)
                 )
                   ? "pointer"
-                  : "not-allowed",
-              opacity:
+                  : "not-allowed"
+              ),
+              opacity: (
                 resourceType && (
                   resourceType === "SQS Queue"
                     ? (sqsType && sqsPurpose.trim() && (activeTab !== 0 || deploymentType))
                     : (resourceType === "S3 Bucket" ? !!resourceName.trim() : true)
                 )
                   ? 1
-                  : 0.6,
+                  : 0.6
+              ),
               fontFamily: '"Times New Roman", Times, serif'
             }}
             disabled={
